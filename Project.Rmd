@@ -1,0 +1,104 @@
+---
+title: "Predicting quality of execution of weight lifting exercises"
+author: "Manuel Alejandro Godoy Rodríguez"
+date: "16/6/2021"
+output: html_document
+---
+
+## Synopsis
+
+In this analysis we will use the data collected by Groupware@LES (more information
+[here](http://groupware.les.inf.puc-rio.br/har)) which aims to describe "how well" 
+a weight lifting activity was performed. A group of 6 individuals, wearing a 
+variety of sensors, were asked to perform the activity in 5 different ways: exactly 
+according to the specification (Class A), throwing the elbows to the front (Class B), 
+lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway 
+(Class D) and throwing the hips to the front (Class E).
+
+Our goal is to build and train a model capable of predicting the manner ("Class A, B,
+etc") in which the exercise was performed. We use the [training dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) available in
+the course page to train the model, and then we test it the [corresponding testing dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).
+
+## Overview of the data
+
+Each data set contains 160 variables. The training data set contains 19622 
+observations and the testing data set has 20 observations.
+
+```{r echo=TRUE}
+pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+dim(pml_training)
+pml_testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+dim(pml_testing)
+```
+
+Many of these variables contain null and NA values, so we discard them. However, 
+the data collected by gyroscopes, magnets and accelerators is available, and also
+the data for roll, pitch and yaw orientation. All of this data comes from sensors
+put in the arm, forearm and belt of the wearer, and also on the dumbell used in 
+the exercise.
+
+## Variable selection
+
+We don't need to use all of the variables available. Maybe some of these variables
+don't change much from one class of activity (A, B, C, D, E) to another. We can use
+a boxplot to detect which variables can help us to differentiate the class and 
+which ones can't. For instance, the variable  on the left (roll_dumbbell) is 
+potentially more helpful than the one of the right (roll_arm), since the latter 
+behaves similarly for the A, C, D and E classes:
+
+```{r echo=TRUE}
+par(mfrow=c(1,2))
+boxplot(roll_dumbbell ~ classe, data = pml_training)
+boxplot(roll_arm ~ classe, data = pml_training)
+```
+
+Based on this approach, we selected the information associated with the forearm and
+the dumbbell as predictors. Note that we keep the user_name as well: 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+subset_training <- select(pml_training, c("user_name","total_accel_arm","roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","roll_forearm","pitch_forearm", "classe"))
+str(subset_training)
+```
+
+## Building the model
+
+We choose to build a random forest model, due to its known accuracy and the fact 
+that we don't have too many variables (less than 10). Since random forest models 
+can lead to overfitting, so it is important to perform cross validation. We choose 
+n=12, which is twice the number of subjects that participated in this study.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(caret)
+Sys.time()
+rf.fit <- train(classe ~ ., method="rf", data=subset_training, trControl = trainControl(method="cv"),number=12)
+Sys.time()
+```
+
+The model takes around 8 minutes to train, which is acceptable. The accuracy for 
+the training set is 88.17%, so we should expect an out of sample error a little 
+higher than 11.83%, maybe up to 15%.
+
+```{r echo=TRUE}
+rf.fit
+```
+
+Had the model been less accurate, an alternative approach would have been to 
+use Model Ensembling, but this time it won't be necessary.
+
+## Testing the model
+
+Finally we test the model, with the unused data set containing only the variables
+chosen for the model. Our goal is to correctly predict 17 out of 20 results (85%).
+
+```{r echo=TRUE, eval=FALSE}
+subset_testing <- select(pml_testing, c("user_name","total_accel_arm","roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell","roll_forearm","pitch_forearm", "problem_id"))
+
+pred <- predict(rf.fit, subset_testing)
+```
+
+Fortunately, the model was able to predict correctly 19 out of 20 results. The
+only wrong prediction was #7.
+
+![score](score.png)
+![wrong answer](wrong_answer.png)
